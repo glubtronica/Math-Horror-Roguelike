@@ -1,12 +1,14 @@
 using System;
 using System.Numerics;
+using System.Collections.Generic;
 
 class Program
 {
     static void Main()
     {
-        Console.WriteLine("=== THE BRUTAL ORACLE ===");
-        Console.WriteLine("You have 5 guesses to divine the Master Number.\n");
+        Console.WriteLine("=== THE BRUTAL ORACLE: CLUE QUALITY EDITION ===");
+        Console.WriteLine("You have 5 guesses to divine the Master Number.");
+        Console.WriteLine("Clues must be EARNED.\n");
 
         Console.Write("Enter your seeker name: ");
         string name = Console.ReadLine()?.Trim();
@@ -15,13 +17,17 @@ class Program
         const int MasterNumber = 42;
         const int MaxTurns = 5;
 
-        // The hidden "ritual" layer: base^exponent (base stays secret)
+        // Ritual layer (secret): base^exponent
         Random rng = new Random();
-        int baseNumber = rng.Next(1, 101); // 1..100
+        int baseNumber = rng.Next(2, 21);   // keep ritual somewhat sane: 2..20
         int exponent = 1;
 
+        // Track clues already given so we don't repeat
+        HashSet<string> usedClues = new HashSet<string>();
+
         Console.WriteLine($"\nWelcome, {name}.");
-        Console.WriteLine("The Oracle listens. The ritual escalates.\n");
+        Console.WriteLine("The Oracle watches your numbers, not your intentions.");
+        Console.WriteLine("Win condition: speak the Master Number exactly.\n");
 
         for (int turn = 1; turn <= MaxTurns; turn++)
         {
@@ -32,39 +38,47 @@ class Program
             if (!BigInteger.TryParse(input, out BigInteger guess))
             {
                 Console.WriteLine("The Oracle does not understand that shape. (Enter a whole number.)\n");
-                turn--; // don't waste a turn on invalid input
+                turn--; // don't waste a turn
                 continue;
             }
 
-            // WIN CONDITION: guess the master number
+            // Win instantly on master
             if (guess == MasterNumber)
             {
                 WinReveal(name);
                 return;
             }
 
-            // Subtle hint system based on what they guessed (doesn't reveal the master directly)
-            GiveSubtleHint(guess);
-
-            // Background brutal ritual logic (does NOT affect win condition directly)
-            // It exists to create tension / progression / "the machine reacts"
+            // Ritual evaluation
             BigInteger currentTarget = BigInteger.Pow(baseNumber, exponent);
             BigInteger tolerance = GetGlidingTolerance(currentTarget, exponent);
             BigInteger diff = BigInteger.Abs(guess - currentTarget);
 
-            bool canDrop = exponent > 1;
-            if (canDrop && diff <= tolerance)
+            bool earnedClue = (exponent > 1) && (diff <= tolerance);
+
+            if (earnedClue)
             {
                 exponent--;
-                Console.WriteLine("The air stills for a moment. The ritual slackens.\n");
+                Console.WriteLine("The air stills. The ritual slackens.");
+                Console.WriteLine($"(You were close enough: |guess - target| = {diff} ≤ {tolerance})");
+
+                string clue = GenerateNuancedClue(MasterNumber, exponent, usedClues, rng);
+                if (!string.IsNullOrWhiteSpace(clue))
+                {
+                    Console.WriteLine($"CLUE: {clue}\n");
+                }
+                else
+                {
+                    Console.WriteLine("CLUE: The Oracle withholds repetition.\n");
+                }
             }
             else
             {
                 exponent++;
-                Console.WriteLine("The pressure increases. The ritual intensifies.\n");
+                Console.WriteLine("The pressure increases. The ritual intensifies.");
+                Console.WriteLine($"(Not close enough: |guess - target| = {diff} > {tolerance})\n");
             }
 
-            // Keep exponent from getting silly (game is only 5 turns anyway)
             if (exponent < 1) exponent = 1;
             if (exponent > 12) exponent = 12;
         }
@@ -75,61 +89,90 @@ class Program
         Console.ReadKey();
     }
 
-    static void GiveSubtleHint(BigInteger guess)
-    {
-        // We keep these intentionally poetic and indirect.
-        // They’re triggered by properties of the player's guess, not by closeness to 42.
-        // That way, the hints feel like “omens” rather than a standard number puzzle.
-
-        string s = guess.ToString();
-        bool twoDigit = (guess >= 10 && guess <= 99) || (guess <= -10 && guess >= -99);
-        bool even = (guess % 2 == 0);
-        bool has4 = s.Contains('4');
-        bool has2 = s.Contains('2');
-
-        int omenCount = 0;
-
-        if (twoDigit)
-        {
-            Console.WriteLine("Omen: The answer wears two faces.");
-            omenCount++;
-        }
-        if (even)
-        {
-            Console.WriteLine("Omen: Balance. Symmetry. A paired rhythm.");
-            omenCount++;
-        }
-        if (has4)
-        {
-            Console.WriteLine("Omen: A right-angled shape flashes behind your eyes.");
-            omenCount++;
-        }
-        if (has2)
-        {
-            Console.WriteLine("Omen: You hear a duet—two notes insisting they belong together.");
-            omenCount++;
-        }
-
-        if (omenCount == 0)
-        {
-            Console.WriteLine("Omen: Only static. No pattern holds.");
-        }
-    }
-
-    // Tolerance that glides up as targets get bigger AND as exponent climbs.
-    // This makes the “downshift” more plausible later, without becoming trivial early.
+    // Tolerance glides with target magnitude and exponent.
     static BigInteger GetGlidingTolerance(BigInteger target, int exponent)
     {
-        // Percent window grows with exponent:
-        // e1: 4%, e2: 6%, e3: 8%, ... capped at 22%
-        int percent = Math.Min(22, 4 + (exponent - 1) * 2);
+        // Slightly forgiving because clues are gated behind closeness.
+        // e1: 6%, e2: 9%, e3: 12%, ... capped at 30%
+        int percent = Math.Min(30, 6 + (exponent - 1) * 3);
 
         BigInteger tol = (target * percent) / 100;
 
-        // Minimum tolerance so early game isn't impossible.
-        if (tol < 10) tol = 10;
+        // Minimum so the ritual isn't impossible early.
+        if (tol < 15) tol = 15;
 
         return tol;
+    }
+
+    static string GenerateNuancedClue(int master, int currentExponentAfterDrop, HashSet<string> used, Random rng)
+    {
+        // Lower exponent => better clue quality, but still not a direct giveaway.
+        // We'll pull from a pool of "clue families" and avoid repeats.
+
+        List<string> candidates = new List<string>();
+
+        // ---- Oblique / vibe clues (high exponent, low quality) ----
+        // Still true, but more poetic than diagnostic.
+        candidates.Add("Some answers are famous not because they're correct, but because everyone keeps asking the wrong question.");
+
+        // ---- Light math constraints (mid quality) ----
+        candidates.Add("It is even, but it refuses to be a tidy square.");
+        candidates.Add("It is not prime, yet it isn't crowded with factors.");
+        candidates.Add("Its prime structure is small: only two primes share custody.");
+
+        // ---- Modular / residue hints (stronger, but not explicit) ----
+        // (These are surprisingly helpful without giving away digits.)
+        int mod5 = master % 5;
+        int mod8 = master % 8;
+        int mod9 = master % 9;
+
+        candidates.Add($"When divided by 5, it leaves a remainder of {mod5}.");
+        candidates.Add($"When divided by 8, it leaves a remainder of {mod8}.");
+        candidates.Add($"Its digit-sum leaves remainder {mod9} when divided by 9.");
+
+        // ---- Range-ish hints (strongest, but still not “contains 4 and 2”) ----
+        // Keep these subtle: relative to landmarks, not explicit bounds.
+        candidates.Add("It sits closer to 50 than to 30.");
+        candidates.Add("It lives in the low forties—near a familiar hitchhiker’s whisper.");
+        candidates.Add("If you walk up from 40, you won't need more than one hand.");
+
+        // ---- Control clue strength by exponent ----
+        // We filter candidates by "tier" depending on exponent.
+        // Higher exponent => only oblique clues.
+        // Lower exponent => allow stronger clues.
+        List<string> filtered = new List<string>();
+
+        if (currentExponentAfterDrop >= 8)
+        {
+            // Very oblique only
+            filtered.Add(candidates[0]);
+        }
+        else if (currentExponentAfterDrop >= 5)
+        {
+            // Oblique + light math constraints
+            filtered.Add(candidates[0]);
+            filtered.Add(candidates[1]);
+            filtered.Add(candidates[2]);
+            filtered.Add(candidates[3]);
+        }
+        else if (currentExponentAfterDrop >= 3)
+        {
+            // Add modular hints
+            filtered.AddRange(new[] { candidates[0], candidates[1], candidates[2], candidates[3], candidates[4], candidates[5], candidates[6] });
+        }
+        else
+        {
+            // Best quality: allow range-ish and the stronger flavor clue
+            filtered.AddRange(candidates);
+        }
+
+        // Remove already used
+        filtered.RemoveAll(c => used.Contains(c));
+        if (filtered.Count == 0) return "";
+
+        string chosen = filtered[rng.Next(filtered.Count)];
+        used.Add(chosen);
+        return chosen;
     }
 
     static void WinReveal(string name)
@@ -140,12 +183,12 @@ class Program
         Console.WriteLine("🏆 YOU WIN: THE MASTER NUMBER IS 42 🏆\n");
 
         Console.WriteLine("In Douglas Adams’ *The Hitchhiker’s Guide to the Galaxy*,");
-        Console.WriteLine("a supercomputer named Deep Thought is asked for the Answer");
-        Console.WriteLine("to the Ultimate Question of Life, the Universe, and Everything.");
-        Console.WriteLine("After an absurdly long calculation, it delivers the answer:\n");
+        Console.WriteLine("a supercomputer (Deep Thought) is asked for the Answer to the");
+        Console.WriteLine("Ultimate Question of Life, the Universe, and Everything.");
+        Console.WriteLine("After an absurdly long calculation, it delivers:\n");
         Console.WriteLine("42.\n");
-        Console.WriteLine("The joke (and the charm) is that the Answer is meaningless");
-        Console.WriteLine("without knowing the right Question—so the search continues.\n");
+        Console.WriteLine("The punchline is that an Answer without the right Question");
+        Console.WriteLine("is useless—so the quest for meaning continues.\n");
 
         Console.WriteLine("Press any key to exit...");
         Console.ReadKey();
